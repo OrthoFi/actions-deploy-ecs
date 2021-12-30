@@ -86,7 +86,7 @@ runs:
 
     - name: Output Deployment Id
       shell: bash
-      run: echo "::notice title=Code Deploy Deployment Id::${{ steps.deploy.outputs.codedeploy-deployment-id }}"
+      run: echo "::notice title=Code Deploy Deployment Id::https://console.aws.amazon.com/codesuite/codedeploy/deployments/${{ steps.deploy.outputs.codedeploy-deployment-id }}?us-east-1"
 
     - name: Create Sentry release
       uses: getsentry/action-release@v1
