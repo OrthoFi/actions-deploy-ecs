@@ -84,6 +84,7 @@ runs:
         codedeploy-deployment-group: ${{ inputs.app-env-name }}-${{ inputs.app-name }}-api
 
     - name: Output Deployment Id
+      shell: bash
       run: echo "::notice title=Code Deploy Deployment Id::${{ steps.deploy.outputs.codedeploy-deployment-id }}"
 
     - name: Create Sentry release
