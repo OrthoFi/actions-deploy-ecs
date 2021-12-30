@@ -57,6 +57,7 @@ runs:
       uses: aws-actions/amazon-ecr-login@v1
 
     - name: Download Task Definition
+      shell: bash
       run: aws ecs describe-task-definition --task-definition ${{ inputs.app-env-name }}-${{ inputs.app-name }}-api --query taskDefinition > task-definition.json
 
     - name: Update Task Definition
