@@ -1,0 +1,76 @@
+name: Deploy ECS Application
+inputs:
+  appspec-name:
+    description: Name of the appspec file
+    required: true
+    default: appspec.yml
+
+  app-env-name:
+    description: Name of the environment to deploy to eg risk, dev, production
+    required: true
+
+  app-name:
+    description: Name of the application eg patient, user, practice, gateway
+    required: true
+
+  sentry-auth-token:
+    description: The sentry auth token. Likely passed by specifying secrets.SENTRY_AUTH_TOKEN
+    required: true
+outputs:
+  codedeploy-deployment-id:
+    description: The deployment ID of the CodeDeploy deployment
+    value: ${{ steps.deploy.outputs.codedeploy-deployment-id }}
+
+runs:
+  using: composite
+  env:
+    APP_ENV_NAME: ${{ inputs.app-env-name }}
+    ECS_SERVICE: ${{ inputs.app-env-name }}-${{ inputs.app-name }}-api
+    ECS_CONTAINER_NAME: ${{ inputs.app-name }}-api
+    ECS_IMAGE_NAME: ${{ inputs.app-name }}-api
+
+  steps:
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Download Task Definition
+      run: aws ecs describe-task-definition --task-definition ${{ env.ECS_TASK_DEFINITION }} --query taskDefinition > task-definition.json
+
+    - name: Update Task Definition
+      id: task-def
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: task-definition.json
+        container-name: ${{ env.ECS_CONTAINER_NAME }}
+        image: "${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_IMAGE_NAME }}:sha-${{ github.sha }}"
+        environment-variables: |
+          ASPNETCORE_ENVIRONMENT=${{ env.APP_ENV_NAME }}
+          GIT__BUILD_NUMBER=${{ github.build_number }}
+          GIT__REF=${{ github.ref }}
+          GIT__SHA=${{ github.sha }}
+
+    - name: Deploy Amazon ECS Task Definition
+      id: deploy
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        task-definition: ${{ steps.task-def.outputs.task-definition }}
+        service: ${{ env.ECS_SERVICE }}
+        cluster: ${{ env.APP_ENV_NAME }}
+        codedeploy-appspec: ${{ inputs.appspec-name }}
+        codedeploy-application: ${{ env.ECS_SERVICE }}
+        codedeploy-deployment-group: ${{ env.ECS_SERVICE }}
+
+    - name: Output Deployment Id
+      run: echo "::notice title=Code Deploy Deployment Id::${{ steps.deploy.outputs.codedeploy-deployment-id }}"
+
+    - name: Create Sentry release
+      uses: getsentry/action-release@v1
+      env:
+        SENTRY_AUTH_TOKEN: ${{ inputs.sentry-auth-token }}
+        SENTRY_ORG: orthofi
+        SENTRY_PROJECT: service-${{ inputs.app-name }}
+      with:
+        environment: ${{ inputs.app-env-name }}
+        version: ${{ github.sha }}
+        ignore_empty: true
