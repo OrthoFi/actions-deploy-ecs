@@ -33,12 +33,6 @@ outputs:
 
 runs:
   using: composite
-  env:
-    APP_ENV_NAME: ${{ inputs.app-env-name }}
-    ECS_SERVICE: ${{ inputs.app-env-name }}-${{ inputs.app-name }}-api
-    ECS_CONTAINER_NAME: ${{ inputs.app-name }}-api
-    ECS_IMAGE_NAME: ${{ inputs.app-name }}-api
-
   steps:
     - uses: actions/checkout@v2
 
@@ -63,17 +57,17 @@ runs:
       uses: aws-actions/amazon-ecr-login@v1
 
     - name: Download Task Definition
-      run: aws ecs describe-task-definition --task-definition ${{ env.ECS_TASK_DEFINITION }} --query taskDefinition > task-definition.json
+      run: aws ecs describe-task-definition --task-definition ${{ inputs.app-env-name }}-${{ inputs.app-name }}-api --query taskDefinition > task-definition.json
 
     - name: Update Task Definition
       id: task-def
       uses: aws-actions/amazon-ecs-render-task-definition@v1
       with:
         task-definition: task-definition.json
-        container-name: ${{ env.ECS_CONTAINER_NAME }}
-        image: "${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_IMAGE_NAME }}:sha-${{ github.sha }}"
+        container-name: ${{ inputs.app-name }}-api
+        image: "${{ steps.login-ecr.outputs.registry }}/${{ inputs.app-name }}-api:sha-${{ github.sha }}"
         environment-variables: |
-          ASPNETCORE_ENVIRONMENT=${{ env.APP_ENV_NAME }}
+          ASPNETCORE_ENVIRONMENT=${{ inputs.app-env-name }}
           GIT__BUILD_NUMBER=${{ github.build_number }}
           GIT__REF=${{ github.ref }}
           GIT__SHA=${{ github.sha }}
@@ -83,11 +77,11 @@ runs:
       uses: aws-actions/amazon-ecs-deploy-task-definition@v1
       with:
         task-definition: ${{ steps.task-def.outputs.task-definition }}
-        service: ${{ env.ECS_SERVICE }}
-        cluster: ${{ env.APP_ENV_NAME }}
+        service: ${{ inputs.app-env-name }}-${{ inputs.app-name }}-api
+        cluster: ${{ inputs.app-env-name }}
         codedeploy-appspec: ${{ inputs.appspec-name }}
-        codedeploy-application: ${{ env.ECS_SERVICE }}
-        codedeploy-deployment-group: ${{ env.ECS_SERVICE }}
+        codedeploy-application: ${{ inputs.app-env-name }}-${{ inputs.app-name }}-api
+        codedeploy-deployment-group: ${{ inputs.app-env-name }}-${{ inputs.app-name }}-api
 
     - name: Output Deployment Id
       run: echo "::notice title=Code Deploy Deployment Id::${{ steps.deploy.outputs.codedeploy-deployment-id }}"
