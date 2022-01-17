@@ -78,7 +78,7 @@ runs:
           DD_DOTNET_TRACER_HOME=./datadog
           DD_ENV=${{ inputs.app-env-name }}
           DD_SERVICE=${{ inputs.app-name }}
-          DD_VERSION=${{ github.sha }}
+          DD_VERSION=sha-${{ github.sha }}
 
     - name: Update Docker Labels
       id: update-docker-labels
@@ -94,7 +94,7 @@ runs:
             $labels = @{}
         }
 
-        $labels["com.datadoghq.tags.version"] = "${{ github.sha }}"
+        $labels["com.datadoghq.tags.version"] = "sha-${{ github.sha }}"
 
         ConvertTo-Json $taskDefinition -Depth 100 | Out-File $filePath
 
