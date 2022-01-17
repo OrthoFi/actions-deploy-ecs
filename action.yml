@@ -80,6 +80,25 @@ runs:
           DD_SERVICE=${{ inputs.app-name }}
           DD_VERSION=${{ github.sha }}
 
+    - name: Update Docker Labels
+      id: update-docker-labels
+      shell: pwsh
+      run : |
+        $filePath = "${{ steps.task-def.outputs.task-definition }}"
+
+        $taskDefinition = ConvertFrom-Json($(Get-Content -Path $filePath) -join '') -AsHashtable
+
+        $labels = $taskDefinition.containerDefinitions[0].dockerLabels
+
+        if (-not $labels) {
+            $labels = @{}
+        }
+
+        $labels["com.datadoghq.tags.version"] = "${{ github.sha }}"
+
+        ConvertTo-Json $taskDefinition -Depth 100 | Out-File $filePath
+
+
     - name: Deploy Amazon ECS Task Definition
       id: deploy
       uses: aws-actions/amazon-ecs-deploy-task-definition@v1
