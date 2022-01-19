@@ -1,8 +1,6 @@
 param(
     [parameter(Mandatory = $true)]
-    [string]$AppSpecFile
-)
-param(
+    [string]$AppSpecFile,
     [parameter(Mandatory = $true)]
     [string]$EnvironmentName
 )
