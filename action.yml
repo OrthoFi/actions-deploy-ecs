@@ -3,7 +3,7 @@ inputs:
   appspec-name:
     description: Name of the appspec file
     required: true
-    default: appspec.yml
+    default: appspec.json
   app-env-name:
     description: Name of the environment to deploy to eg risk, dev, production
     required: true
@@ -35,6 +35,10 @@ runs:
   using: composite
   steps:
     - uses: actions/checkout@v2
+
+    - name: Add AfterAllowTestTraffic Lambda
+      shell: pwsh
+      run: .\Add-AfterAllowTestTrafficLambda.ps1
 
     - name: Set AWS Role
       id: set-role
