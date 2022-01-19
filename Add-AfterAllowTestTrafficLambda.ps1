@@ -14,7 +14,7 @@ if ($null -eq $s.Hooks) {
 
 # $EnvironmentName = $ {{ github.event.inputs.environment}}
 $newHook = New-Object PSObject -Property @{ 
-    "AfterAllowTestTraffic" = "$($EnvironmentName)-common-code-deploy-test-traffic"
+    "AfterAllowTestTraffic" = "$($EnvironmentName)-common-codeDeployTestTraffic"
 }
 
 $s.Hooks += $newHook
