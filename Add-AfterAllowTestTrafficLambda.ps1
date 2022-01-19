@@ -1,15 +1,24 @@
-$fileName = $ {{ inputs.appspec-name }}
-$s = Get-Content "./$($fileName)" | ConvertFrom-Json
+param(
+    [parameter(Mandatory = $true)]
+    [string]$AppSpecFile
+)
+param(
+    [parameter(Mandatory = $true)]
+    [string]$EnvironmentName
+)
+
+# $AppSpecFile = $ {{ inputs.appspec-name }}
+$s = Get-Content "./$($AppSpecFile)" | ConvertFrom-Json
 
 if ($null -eq $s.Hooks) {
     Add-Member -InputObject $s -NotePropertyName "Hooks" -NotePropertyValue @()
 }
 
-$environmentName = $ {{ github.event.inputs.environment}}
+# $EnvironmentName = $ {{ github.event.inputs.environment}}
 $newHook = New-Object PSObject -Property @{ 
-    "AfterAllowTestTraffic" = "$($environmentName)-common-code-deploy-test-traffic"
+    "AfterAllowTestTraffic" = "$($EnvironmentName)-common-code-deploy-test-traffic"
 }
 
 $s.Hooks += $newHook
 
-$s | ConvertTo-Json -Depth 100 | Set-Content "./$($fileName)"
+$s | ConvertTo-Json -Depth 100 | Set-Content "./$($AppSpecFile)"
