@@ -38,7 +38,7 @@ runs:
 
     - name: Add AfterAllowTestTraffic Lambda
       shell: pwsh
-      run: ${{ github.action_path }}/Add-AfterAllowTestTrafficLambda.ps1 -appSpecFile ${{ inputs.appspec-name }} -environmentName ${{ github.event.inputs.environment }}
+      run: ${{ github.action_path }}/Add-AfterAllowTestTrafficLambda.ps1 -AppSpecFile ${{ inputs.appspec-name }} -EnvironmentName ${{ github.event.inputs.environment }}
 
     - name: Set AWS Role
       id: set-role
