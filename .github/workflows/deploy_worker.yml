@@ -1,0 +1,138 @@
+name: Deploy
+on:
+  workflow_call:
+    inputs:
+      app-domain:
+        description: Name of the application domain e.g. campaign, patient, practice
+        required: true
+        type: string
+
+      app-env-name:
+        description: Name of the environment to deploy to e.g. risk, dev, production
+        required: true
+        type: string
+
+      app-name:
+        description: Name of the application e.g. publisher
+        required: true
+        type: string
+
+    secrets:
+      aws-access-key-id:
+        description: secrets.BUILD_AWS_ACCESS_KEY_ID
+        required: true
+
+      aws-dev-build-role:
+        description: secrets.OCKERS_BUILD_ROLE
+        required: true
+
+      aws-production-build-role:
+        description: secrets.PRODUCTION_BUILD_ROLE
+        required: true
+
+      aws-secret-access-key:
+        description: secrets.BUILD_AWS_SECRET_ACCESS_KEY
+        required: true
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    env:
+      SERVICE_NAME: ${{ inputs.app-env-name }}-${{ inputs.app-domain }}-${{ inputs.app-name }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+
+      - name: Determine SHA
+        id: sha
+        run: |
+          if($(git log -1 --pretty=%B)[0].StartsWith("chore(release)")) {
+            Write-Host "::set-output name=sha::$(git rev-parse HEAD^)"
+          }
+          else {
+            Write-Host "::set-output name=sha::${{ github.sha }}"
+          }
+
+      - name: Determine Build Role
+        id: set-role
+        uses: orthofi/actions-set-build-role@v1
+        with:
+          production-role: ${{ secrets.aws-production-build-role }}
+          dev-role: ${{ secrets.aws-dev-build-role }}
+          environment-name: ${{ inputs.app-env-name }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.aws-access-key-id }}
+          aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
+          aws-region: us-east-1
+          role-to-assume: ${{ steps.set-role.outputs.build-role }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Download Task Definition
+        run: aws ecs describe-task-definition --task-definition ${{ env.SERVICE_NAME }}-template --query taskDefinition > task-definition.json
+
+      - name: Render New Task Definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ inputs.app-name }}
+          image: "${{ steps.login-ecr.outputs.registry }}/${{ inputs.app-domain }}-${{ inputs.app-name }}:sha-${{ steps.sha.outputs.sha }}"
+          environment-variables: |
+            GIT__BUILD_NUMBER=${{ github.build_number }}
+            GIT__REF=${{ github.ref }}
+            GIT__SHA=${{ steps.sha.outputs.sha }}
+            CORECLR_ENABLE_PROFILING=1
+            CORECLR_PROFILER={846F5F1C-F9AE-4B07-969E-05C26BC060D8}
+            CORECLR_PROFILER_PATH=./datadog/linux-x64/Datadog.Trace.ClrProfiler.Native.so
+            DD_DOTNET_TRACER_HOME=./datadog
+            DD_VERSION=sha-${{ steps.sha.outputs.sha }}
+            OTEL_RESOURCE_ATTRIBUTES=deployment.environment=${{ inputs.app-env-name }},service.version=sha-${{ steps.sha.outputs.sha }}
+
+      - name: Sanitize Fields for New Task Definition
+        run: |
+          $filePath = "${{ steps.task-def.outputs.task-definition }}"
+
+          $taskDefinition = ConvertFrom-Json($(Get-Content -Path $filePath) -join '') -AsHashtable
+
+          $taskDefinition.Remove("compatibilities")
+          $taskDefinition.Remove("taskDefinitionArn")
+          $taskDefinition.Remove("requiresAttributes")
+          $taskDefinition.Remove("revision")
+          $taskDefinition.Remove("status")
+          $taskDefinition.Remove("registeredAt")
+          $taskDefinition.Remove("registeredBy")
+
+          $taskDefinition["family"] = $taskDefinition["family"].Replace("-template", "")
+
+          $labels = $taskDefinition.containerDefinitions[0].dockerLabels
+
+          if (-not $labels) {
+              $labels = @{}
+              $taskDefinition.containerDefinitions[0].dockerLabels = $labels
+          }
+
+          $labels["com.datadoghq.tags.version"] = "sha-${{ steps.sha.outputs.sha }}"
+
+          ConvertTo-Json $taskDefinition -Depth 100 | Out-File $filePath
+
+      - name: Deploy Task Definition
+        id: deploy
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.SERVICE_NAME }}
+          cluster: ${{ inputs.app-env-name }}
+          wait-for-service-stability: true
