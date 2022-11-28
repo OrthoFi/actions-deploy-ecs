@@ -97,6 +97,21 @@ jobs:
         shell: bash
         run: aws ecs describe-task-definition --task-definition ${{ inputs.app-env-name }}-${{ inputs.app-name }}-api --query taskDefinition > task-definition.json
 
+      - name: Sanitize Task Definition
+        shell: pwsh
+        run: |
+          $taskDefinition = ConvertFrom-Json($(Get-Content -Path task-definition.json) -join '') -AsHashtable
+
+          $taskDefinition.Remove("compatibilities")
+          $taskDefinition.Remove("taskDefinitionArn")
+          $taskDefinition.Remove("requiresAttributes")
+          $taskDefinition.Remove("revision")
+          $taskDefinition.Remove("status")
+          $taskDefinition.Remove("registeredAt")
+          $taskDefinition.Remove("registeredBy")
+
+          ConvertTo-Json $taskDefinition -Depth 100 | Out-File task-definition.json
+
       - name: Update Task Definition
         id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
