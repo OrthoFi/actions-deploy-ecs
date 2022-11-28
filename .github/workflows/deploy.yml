@@ -50,10 +50,10 @@ jobs:
         shell: pwsh
         run: |
           if($(git log -1 --pretty=%B)[0].StartsWith("chore(release)")) {
-            Write-Host "::set-output name=sha::$(git rev-parse HEAD^)"
+            echo "sha=$(git rev-parse HEAD^)" >> $env:GITHUB_OUTPUT
           }
           else {
-            Write-Host "::set-output name=sha::${{ github.sha }}"
+            echo "sha=${{ github.sha }}" >> $env:GITHUB_OUTPUT
           }
 
       - name: Add AfterAllowTestTraffic Lambda
@@ -82,7 +82,7 @@ jobs:
           environment-name: ${{ inputs.app-env-name }}
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v1-node16
         with:
           aws-access-key-id: ${{ secrets.aws-access-key-id }}
           aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
