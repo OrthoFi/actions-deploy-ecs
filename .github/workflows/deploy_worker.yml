@@ -53,11 +53,13 @@ jobs:
       - name: Determine SHA
         id: sha
         run: |
-          if($(git log -1 --pretty=%B)[0].StartsWith("chore(release)")) {
-            Write-Host "::set-output name=sha::$(git rev-parse HEAD^)"
+          $commit_message = $(git log -1 --pretty=%B) -join ' '
+
+          if($commit_message.StartsWith("chore(release)")) {
+            echo "sha=$(git rev-parse HEAD^)" >> $env:GITHUB_OUTPUT
           }
           else {
-            Write-Host "::set-output name=sha::${{ github.sha }}"
+            echo "sha=${{ github.sha }}" >> $env:GITHUB_OUTPUT
           }
 
       - name: Determine Build Role
