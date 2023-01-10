@@ -133,8 +133,7 @@ jobs:
             DD_ENV=${{ inputs.app-env-name }}
             DD_SERVICE=${{ inputs.app-name }}
             DD_VERSION=sha-${{ steps.sha.outputs.sha }}
-            DD_TRACE_OTEL_ENABLED=true
-            OTEL_RESOURCE_ATTRIBUTES=deployment.environment=${{ inputs.app-env-name }},service.version=sha-${{ steps.sha.outputs.sha }},service.name=${{ inputs.app-name }}
+            OTEL_RESOURCE_ATTRIBUTES=deployment.environment=${{ inputs.app-env-name }},service.version=sha-${{ steps.sha.outputs.sha }}
 
       - name: Update Docker Labels
         shell: pwsh
