@@ -17,6 +17,11 @@ on:
         required: true
         type: string
 
+      image:
+        description: Name of the image e.g. skynet
+        required: false
+        type: string
+
     secrets:
       aws-access-key-id:
         description: secrets.BUILD_AWS_ACCESS_KEY_ID
@@ -91,7 +96,7 @@ jobs:
         with:
           task-definition: task-definition.json
           container-name: ${{ inputs.app-name }}
-          image: "${{ steps.login-ecr.outputs.registry }}/${{ inputs.app-domain }}-${{ inputs.app-name }}:sha-${{ steps.sha.outputs.sha }}"
+          image: "${{ steps.login-ecr.outputs.registry }}/${{ inputs.image || format('{0}-{1}', inputs.app-domain, inputs.app-name) }}:sha-${{ steps.sha.outputs.sha }}"
           environment-variables: |
             GIT__BUILD_NUMBER=${{ github.build_number }}
             GIT__REF=${{ github.ref }}
