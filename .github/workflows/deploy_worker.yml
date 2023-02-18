@@ -12,11 +12,6 @@ on:
         required: true
         type: string
 
-      service-name:
-        description: Name of the service e.g. skynet, event-publisher
-        required: false
-        type: string
-
       image:
         description: Name of the image e.g. skynet
         required: false
@@ -27,6 +22,11 @@ on:
         required: false
         type: string
 
+      service-name:
+        description: Name of the service e.g. skynet, event-publisher
+        required: false
+        type: string
+        
     secrets:
       aws-access-key-id:
         description: secrets.BUILD_AWS_ACCESS_KEY_ID
