@@ -2,37 +2,30 @@ name: Deploy
 on:
   workflow_call:
     inputs:
-      app-domain:
-        description: Name of the application domain e.g. campaign, patient, practice
+      container-name: 
+        description: Name of the container to update from the task definition
         required: true
         type: string
 
-      app-env-name:
+      environment-name:
         description: Name of the environment to deploy to e.g. risk, dev, production
         required: true
         type: string
 
-      app-name:
-        description: Name of the application e.g. publisher
-        required: true
+      image:
+        description: Name of the image e.g. skynet
+        required: false
         type: string
 
-    secrets:
-      aws-access-key-id:
-        description: secrets.BUILD_AWS_ACCESS_KEY_ID
-        required: true
+      image-tag-suffix:
+        description: The image tag suffix e.g. -arm
+        required: false
+        type: string
 
-      aws-dev-build-role:
-        description: secrets.OCKERS_BUILD_ROLE
-        required: true
-
-      aws-production-build-role:
-        description: secrets.PRODUCTION_BUILD_ROLE
-        required: true
-
-      aws-secret-access-key:
-        description: secrets.BUILD_AWS_SECRET_ACCESS_KEY
-        required: true
+      service-name:
+        description: Name of the service e.g. skynet, event-publisher
+        required: false
+        type: string
 
 defaults:
   run:
@@ -42,9 +35,8 @@ jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
-    env:
-      SERVICE_NAME: ${{ inputs.app-env-name }}-${{ inputs.app-domain }}-${{ inputs.app-name }}
+    environment: ${{ format('{0}-{1}', inputs.environment-name, inputs.service-name) }}
+    concurrency: ${{ format('{0}-{1}', inputs.environment-name, inputs.service-name) }}
     steps:
       - uses: actions/checkout@v3
         with:
@@ -62,36 +54,28 @@ jobs:
             echo "sha=${{ github.sha }}" >> $env:GITHUB_OUTPUT
           }
 
-      - name: Determine Build Role
-        id: set-role
-        uses: orthofi/actions-set-build-role@v1
-        with:
-          production-role: ${{ secrets.aws-production-build-role }}
-          dev-role: ${{ secrets.aws-dev-build-role }}
-          environment-name: ${{ inputs.app-env-name }}
-
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v1-node16
         with:
-          aws-access-key-id: ${{ secrets.aws-access-key-id }}
-          aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
+          aws-access-key-id: ${{ secrets.BUILD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.BUILD_AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
-          role-to-assume: ${{ steps.set-role.outputs.build-role }}
+          role-to-assume: ${{ vars.AWS_BUILD_ROLE }}
 
       - name: Login to ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Download Task Definition
-        run: aws ecs describe-task-definition --task-definition ${{ env.SERVICE_NAME }}-template --query taskDefinition > task-definition.json
+        run: aws ecs describe-task-definition --task-definition ${{ format('{0}-{1}', inputs.environment-name, inputs.service-name) }}-template --query taskDefinition > task-definition.json
 
       - name: Render New Task Definition
         id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: task-definition.json
-          container-name: ${{ inputs.app-name }}
-          image: "${{ steps.login-ecr.outputs.registry }}/${{ inputs.app-domain }}-${{ inputs.app-name }}:sha-${{ steps.sha.outputs.sha }}"
+          container-name: ${{ inputs.container-name }}
+          image: "${{ steps.login-ecr.outputs.registry }}/${{ inputs.image }}:sha-${{ steps.sha.outputs.sha }}${{ inputs.image-tag-suffix }}"
           environment-variables: |
             GIT__BUILD_NUMBER=${{ github.build_number }}
             GIT__REF=${{ github.ref }}
@@ -101,7 +85,7 @@ jobs:
             CORECLR_PROFILER_PATH=./datadog/linux-x64/Datadog.Trace.ClrProfiler.Native.so
             DD_DOTNET_TRACER_HOME=./datadog
             DD_VERSION=sha-${{ steps.sha.outputs.sha }}
-            OTEL_RESOURCE_ATTRIBUTES=deployment.environment=${{ inputs.app-env-name }},service.version=sha-${{ steps.sha.outputs.sha }}
+            OTEL_RESOURCE_ATTRIBUTES=deployment.environment=${{ inputs.environment-name }},service.version=sha-${{ steps.sha.outputs.sha }}
 
       - name: Sanitize Fields for New Task Definition
         run: |
@@ -135,6 +119,6 @@ jobs:
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           task-definition: ${{ steps.task-def.outputs.task-definition }}
-          service: ${{ env.SERVICE_NAME }}
-          cluster: ${{ inputs.app-env-name }}
+          service: ${{ format('{0}-{1}', inputs.environment-name, inputs.service-name) }}
+          cluster: ${{ inputs.environment-name }}
           wait-for-service-stability: true
