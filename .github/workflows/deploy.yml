@@ -13,27 +13,10 @@ on:
         required: true
         type: string
 
-      app-env-name:
+      environment:
         description: Name of the environment to deploy to e.g. risk, dev, production
         required: true
         type: string
-
-    secrets:
-      aws-access-key-id:
-        description: secrets.BUILD_AWS_ACCESS_KEY_ID
-        required: true
-
-      aws-dev-build-role:
-        description: secrets.OCKERS_BUILD_ROLE
-        required: true
-
-      aws-production-build-role:
-        description: secrets.PRODUCTION_BUILD_ROLE
-        required: true
-
-      aws-secret-access-key:
-        description: secrets.BUILD_AWS_SECRET_ACCESS_KEY
-        required: true
 
 jobs:
   deploy:
@@ -75,21 +58,13 @@ jobs:
 
           $content | ConvertTo-Json -Depth 100 | Set-Content "./${{ inputs.appspec-name }}"
 
-      - name: Set AWS Role
-        id: set-role
-        uses: orthofi/actions-set-build-role@v1
-        with:
-          production-role: ${{ secrets.aws-production-build-role }}
-          dev-role: ${{ secrets.aws-dev-build-role }}
-          environment-name: ${{ inputs.app-env-name }}
-
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1-node16
         with:
-          aws-access-key-id: ${{ secrets.aws-access-key-id }}
-          aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
+          aws-access-key-id: ${{ secrets.BUILD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.BUILD_AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
-          role-to-assume: ${{ steps.set-role.outputs.build-role }}
+          role-to-assume: ${{ vars.AWS_BUILD_ROLE }}
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -97,7 +72,7 @@ jobs:
 
       - name: Download Task Definition
         shell: bash
-        run: aws ecs describe-task-definition --task-definition ${{ inputs.app-env-name }}-${{ inputs.app-name }}-api --query taskDefinition > task-definition.json
+        run: aws ecs describe-task-definition --task-definition ${{ inputs.environment }}-${{ inputs.app-name }}-api --query taskDefinition > task-definition.json
 
       - name: Sanitize Task Definition
         shell: pwsh
@@ -122,7 +97,7 @@ jobs:
           container-name: ${{ inputs.app-name }}-api
           image: "${{ steps.login-ecr.outputs.registry }}/${{ inputs.app-name }}-api:sha-${{ steps.sha.outputs.sha }}"
           environment-variables: |
-            ASPNETCORE_ENVIRONMENT=${{ inputs.app-env-name }}
+            ASPNETCORE_ENVIRONMENT=${{ inputs.environment }}
             GIT__BUILD_NUMBER=${{ github.build_number }}
             GIT__REF=${{ github.ref }}
             GIT__SHA=${{ steps.sha.outputs.sha }}
@@ -130,10 +105,10 @@ jobs:
             CORECLR_PROFILER={846F5F1C-F9AE-4B07-969E-05C26BC060D8}
             CORECLR_PROFILER_PATH=./datadog/linux-x64/Datadog.Trace.ClrProfiler.Native.so
             DD_DOTNET_TRACER_HOME=./datadog
-            DD_ENV=${{ inputs.app-env-name }}
+            DD_ENV=${{ inputs.environment }}
             DD_SERVICE=${{ inputs.app-name }}
             DD_VERSION=sha-${{ steps.sha.outputs.sha }}
-            OTEL_RESOURCE_ATTRIBUTES=deployment.environment=${{ inputs.app-env-name }},service.version=sha-${{ steps.sha.outputs.sha }}
+            OTEL_RESOURCE_ATTRIBUTES=deployment.environment=${{ inputs.environment }},service.version=sha-${{ steps.sha.outputs.sha }}
 
       - name: Update Docker Labels
         shell: pwsh
@@ -157,8 +132,8 @@ jobs:
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           task-definition: ${{ steps.task-def.outputs.task-definition }}
-          service: ${{ inputs.app-env-name }}-${{ inputs.app-name }}-api
-          cluster: ${{ inputs.app-env-name }}
+          service: ${{ inputs.environment }}-${{ inputs.app-name }}-api
+          cluster: ${{ inputs.environment }}
           codedeploy-appspec: ${{ inputs.appspec-name }}
-          codedeploy-application: ${{ inputs.app-env-name }}-${{ inputs.app-name }}-api
-          codedeploy-deployment-group: ${{ inputs.app-env-name }}-${{ inputs.app-name }}-api
+          codedeploy-application: ${{ inputs.environment }}-${{ inputs.app-name }}-api
+          codedeploy-deployment-group: ${{ inputs.environment }}-${{ inputs.app-name }}-api
