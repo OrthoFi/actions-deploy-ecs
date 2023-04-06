@@ -80,10 +80,6 @@ jobs:
             GIT__BUILD_NUMBER=${{ github.build_number }}
             GIT__REF=${{ github.ref }}
             GIT__SHA=${{ steps.sha.outputs.sha }}
-            CORECLR_ENABLE_PROFILING=1
-            CORECLR_PROFILER={846F5F1C-F9AE-4B07-969E-05C26BC060D8}
-            CORECLR_PROFILER_PATH=./datadog/linux-x64/Datadog.Trace.ClrProfiler.Native.so
-            DD_DOTNET_TRACER_HOME=./datadog
             DD_VERSION=sha-${{ steps.sha.outputs.sha }}
             OTEL_RESOURCE_ATTRIBUTES=deployment.environment=${{ inputs.environment-name }},service.version=sha-${{ steps.sha.outputs.sha }}
 
