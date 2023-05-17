@@ -7,6 +7,12 @@ on:
         required: true
         type: string
 
+      ecs-task-definition-template-suffix:
+        default: true
+        description: Task definition name has '-template' suffix to separate history of deployments, set 'false' for older style ECS deployments not using task definition templates
+        required: false
+        type: boolean
+
       environment-name:
         description: Name of the environment to deploy to e.g. risk, dev, production
         required: true
@@ -67,7 +73,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Download Task Definition
-        run: aws ecs describe-task-definition --task-definition ${{ format('{0}-{1}', inputs.environment-name, inputs.service-name) }}-template --query taskDefinition > task-definition.json
+        run: aws ecs describe-task-definition --task-definition ${{ format('{0}-{1}', inputs.environment-name, inputs.service-name) }}${{ inputs.ecs-task-definition-template-suffix && '-template' || '' }} --query taskDefinition > task-definition.json
 
       - name: Render New Task Definition
         id: task-def
