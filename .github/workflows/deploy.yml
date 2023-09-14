@@ -18,6 +18,12 @@ on:
         required: true
         type: string
 
+      wait-for-service-stability:
+        default: true
+        description: Wait for ECS service to stabilize on new version before marking deployment as successful
+        required: false
+        type: boolean
+
 jobs:
   deploy:
     name: Deploy
@@ -137,3 +143,4 @@ jobs:
           codedeploy-appspec: ${{ inputs.appspec-name }}
           codedeploy-application: ${{ inputs.environment }}-${{ inputs.app-name }}-api
           codedeploy-deployment-group: ${{ inputs.environment }}-${{ inputs.app-name }}-api
+          wait-for-service-stability: ${{ inputs.wait-for-service-stability }}
