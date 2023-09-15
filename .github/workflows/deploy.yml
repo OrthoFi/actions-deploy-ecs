@@ -27,7 +27,7 @@ on:
 jobs:
   deploy:
     name: Deploy
-    runs-on: ubuntu-latest
+    runs-on: ['self-hosted','linux','x64']
     environment: ${{ github.event.inputs.environment }}-beanstalk
     steps:
       - uses: actions/checkout@v3
@@ -144,3 +144,40 @@ jobs:
           codedeploy-application: ${{ inputs.environment }}-${{ inputs.app-name }}-api
           codedeploy-deployment-group: ${{ inputs.environment }}-${{ inputs.app-name }}-api
           wait-for-service-stability: ${{ inputs.wait-for-service-stability }}
+
+      - name: Set up Python
+        if: ${{ always() && github.ref_name == 'main' && inputs.environment == 'production' }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+  
+      - name: Pip Install
+        if: ${{ always() && github.ref_name == 'main' && inputs.environment == 'production' }}
+        run: pip install requests
+
+      - name: Mark Deployment In Jellyfish
+        if: ${{ always() && github.ref_name == 'main' && inputs.environment == 'production' }}
+        run: |
+          import requests
+          import json
+          import datetime
+
+          url ='https://webhooks.jellyfish.co/deployment'
+          headers = {'X-jf-api-token': '${{ secrets.JELLYFISH_API_TOKEN }}', 'Content-Type': 'application/json', 'X-jf-api-dry-run': 'false'}
+
+          is_successful = False
+          if '${{ steps.deploy.outcome }}' == 'success':
+              is_successful = True
+
+          data = {
+              "commit_shas": ['${{ github.sha }}'],
+              "deployed_at": datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ'),
+              "is_successful": is_successful,
+              "labels": [f"environment:${{ inputs.environment }}", f"service:${{ inputs.app-name }}", "platform:ecs"],
+              "name": '${{ github.repository }}-deploy-${{ github.run_number }}',
+              "reference_id": '${{ github.repository }}-deploy-${{ github.run_number }}-${{ github.sha }}',
+              "repo_name": '${{ github.repository }}',
+          }
+
+          r = requests.post(url, headers=headers, data=json.dumps(data))
+        shell: python

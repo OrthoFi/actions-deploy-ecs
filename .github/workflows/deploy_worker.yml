@@ -40,7 +40,7 @@ defaults:
 jobs:
   deploy:
     name: Deploy
-    runs-on: ubuntu-latest
+    runs-on: ['self-hosted','linux','x64']
     environment: ${{ format('{0}-{1}', inputs.environment-name, inputs.service-name) }}
     concurrency: ${{ format('{0}-{1}', inputs.environment-name, inputs.service-name) }}
     steps:
@@ -124,3 +124,40 @@ jobs:
           service: ${{ format('{0}-{1}', inputs.environment-name, inputs.service-name) }}
           cluster: ${{ inputs.environment-name }}
           wait-for-service-stability: true
+
+      - name: Set up Python
+        if: ${{ always() && github.ref_name == 'main' && inputs.environment-name == 'production' }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+  
+      - name: Pip Install
+        if: ${{ always() && github.ref_name == 'main' && inputs.environment-name == 'production' }}
+        run: pip install requests
+
+      - name: Mark Deployment In Jellyfish
+        if: ${{ always() && github.ref_name == 'main' && inputs.environment-name == 'production' }}
+        run: |
+          import requests
+          import json
+          import datetime
+
+          url ='https://webhooks.jellyfish.co/deployment'
+          headers = {'X-jf-api-token': '${{ secrets.JELLYFISH_API_TOKEN }}', 'Content-Type': 'application/json', 'X-jf-api-dry-run': 'false'}
+
+          is_successful = False
+          if '${{ steps.deploy.outcome }}' == 'success':
+              is_successful = True
+
+          data = {
+              "commit_shas": ['${{ github.sha }}'],
+              "deployed_at": datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ'),
+              "is_successful": is_successful,
+              "labels": [f"environment:${{ inputs.environment }}", f"service:${{ inputs.app-name }}", "platform:ecs"],
+              "name": '${{ github.repository }}-deploy-${{ github.run_number }}',
+              "reference_id": '${{ github.repository }}-deploy-${{ github.run_number }}-${{ github.sha }}',
+              "repo_name": '${{ github.repository }}',
+          }
+
+          r = requests.post(url, headers=headers, data=json.dumps(data))
+        shell: python
