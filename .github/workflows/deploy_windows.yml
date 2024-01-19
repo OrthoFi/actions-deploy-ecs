@@ -1,0 +1,207 @@
+name: Deploy Windows
+on:
+  workflow_call:
+    inputs:
+      appspec-name:
+        default: appspec.json
+        description: Name of the appspec file
+        required: false
+        type: string
+
+      app-name:
+        description: Name of the name e.g. patient, user, practice, gateway
+        required: true
+        type: string
+
+      code-deploy-deployment-strategy:
+        description: Deployment strategy to use for CodeDeploy
+        required: false
+        type: string
+
+      environment:
+        description: Name of the environment to deploy to e.g. risk, dev, production
+        required: true
+        type: string
+
+      wait-for-service-stability:
+        default: true
+        description: Wait for ECS service to stabilize on new version before marking deployment as successful
+        required: false
+        type: boolean
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ['self-hosted','linux','x64']
+    environment: ${{ github.event.inputs.environment }}-beanstalk
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+
+      - name: Determine SHA
+        id: sha
+        shell: pwsh
+        run: |
+          $commit_message = $(git log -1 --pretty=%B) -join ' '
+
+          if($commit_message.StartsWith("chore(release)")) {
+            echo "sha=$(git rev-parse HEAD^)" >> $env:GITHUB_OUTPUT
+          }
+          else {
+            echo "sha=${{ github.sha }}" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Add AfterAllowTestTraffic Lambda
+        shell: pwsh
+        run: |
+          $content = Get-Content "./${{ inputs.appspec-name }}" | ConvertFrom-Json
+
+          if ($null -eq $content.Hooks) {
+              Add-Member -InputObject $content -NotePropertyName "Hooks" -NotePropertyValue @()
+          }
+
+          $newHook = New-Object PSObject -Property @{ 
+              "AfterAllowTestTraffic" = "${{ github.event.inputs.environment }}-common-codeDeployTestTraffic"
+          }
+
+          $content.Hooks += $newHook
+
+          $content | ConvertTo-Json -Depth 100 | Set-Content "./${{ inputs.appspec-name }}"
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1-node16
+        with:
+          aws-access-key-id: ${{ secrets.BUILD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.BUILD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          role-to-assume: ${{ vars.AWS_BUILD_ROLE }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Download Task Definition
+        shell: bash
+        run: aws ecs describe-task-definition --task-definition ${{ inputs.environment }}-${{ inputs.app-name }} --query taskDefinition > task-definition.json
+
+      - name: Sanitize Task Definition
+        shell: pwsh
+        run: |
+          $taskDefinition = ConvertFrom-Json($(Get-Content -Path task-definition.json) -join '') -AsHashtable
+
+          $taskDefinition.Remove("compatibilities")
+          $taskDefinition.Remove("taskDefinitionArn")
+          $taskDefinition.Remove("requiresAttributes")
+          $taskDefinition.Remove("revision")
+          $taskDefinition.Remove("status")
+          $taskDefinition.Remove("registeredAt")
+          $taskDefinition.Remove("registeredBy")
+
+          ConvertTo-Json $taskDefinition -Depth 100 | Out-File task-definition.json
+
+      - name: Update Task Definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ inputs.app-name }}
+          image: "655438670330.dkr.ecr.us-east-1.amazonaws.com/${{ inputs.app-name }}:sha-${{ steps.sha.outputs.sha }}"
+          environment-variables: |
+            ASPNETCORE_ENVIRONMENT=${{ inputs.environment }}
+            GIT__BUILD_NUMBER=${{ github.build_number }}
+            GIT__REF=${{ github.ref }}
+            GIT__SHA=${{ steps.sha.outputs.sha }}
+            DD_ENV=${{ inputs.environment }}
+            DD_SERVICE=${{ inputs.app-name }}
+            DD_VERSION=sha-${{ steps.sha.outputs.sha }}
+            OTEL_RESOURCE_ATTRIBUTES=deployment.environment=${{ inputs.environment }},service.version=sha-${{ steps.sha.outputs.sha }}
+
+      - name: Update Docker Labels
+        shell: pwsh
+        run: |
+          $filePath = "${{ steps.task-def.outputs.task-definition }}"
+
+          $taskDefinition = ConvertFrom-Json($(Get-Content -Path $filePath) -join '') -AsHashtable
+
+          $labels = $taskDefinition.containerDefinitions[0].dockerLabels
+
+          if (-not $labels) {
+              $labels = @{}
+          }
+
+          $labels["com.datadoghq.tags.version"] = "sha-${{ steps.sha.outputs.sha }}"
+
+          ConvertTo-Json $taskDefinition -Depth 100 | Out-File $filePath
+
+      - name: Update AWS CodeDeploy Deployment Strategy
+        if: ${{ inputs.environment == 'production' && inputs.code-deploy-deployment-strategy }}
+        run: |
+          aws deploy update-deployment-group \
+            --application-name ${{ inputs.environment }}-${{ inputs.app-name }} \
+            --current-deployment-group-name ${{ inputs.environment }}-${{ inputs.app-name }} \
+            --deployment-config-name ${{ github.event.inputs.code-deploy-deployment-strategy }}
+
+      - name: Deploy Amazon ECS Task Definition
+        id: deploy
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ inputs.environment }}-${{ inputs.app-name }}
+          cluster: ${{ inputs.environment }}
+          codedeploy-appspec: ${{ inputs.appspec-name }}
+          codedeploy-application: ${{ inputs.environment }}-${{ inputs.app-name }}
+          codedeploy-deployment-group: ${{ inputs.environment }}-${{ inputs.app-name }}
+          wait-for-service-stability: ${{ inputs.wait-for-service-stability }}
+
+      - name: Check For and Cancel Active Deployment
+        if: cancelled()
+        run: |
+          # PowerShell script to check for active deployment and cancel it
+          $deploymentGroupId = "${{ inputs.environment }}-${{ inputs.app-name }}"
+          $deploymentInfo = aws deploy list-deployments --deployment-group-name $deploymentGroupId --include-only-statuses "InProgress" | ConvertFrom-Json
+          if ($deploymentInfo.deployments -and $deploymentInfo.deployments.Count -gt 0) {
+            $activeDeploymentId = $deploymentInfo.deployments[0]
+            aws deploy stop-deployment --deployment-id $activeDeploymentId --auto-rollback-enabled
+            Write-Output "Deployment $activeDeploymentId has been stopped and rolled back."
+          } else {
+            Write-Output "No active deployments found, therefore no rollback to perform."
+          }
+        shell: pwsh
+
+      - name: Set up Python
+        if: ${{ always() && github.ref_name == 'main' && inputs.environment == 'production' }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+  
+      - name: Pip Install
+        if: ${{ always() && github.ref_name == 'main' && inputs.environment == 'production' }}
+        run: pip install requests
+
+      - name: Mark Deployment In Jellyfish
+        if: ${{ always() && github.ref_name == 'main' && inputs.environment == 'production' }}
+        run: |
+          import requests
+          import json
+          import datetime
+
+          url ='https://webhooks.jellyfish.co/deployment'
+          headers = {'X-jf-api-token': '${{ secrets.JELLYFISH_API_TOKEN }}', 'Content-Type': 'application/json', 'X-jf-api-dry-run': 'false'}
+
+          is_successful = False
+          if '${{ steps.deploy.outcome }}' == 'success':
+              is_successful = True
+
+          data = {
+              "commit_shas": ['${{ github.sha }}'],
+              "deployed_at": datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ'),
+              "is_successful": is_successful,
+              "labels": [f"environment:${{ inputs.environment }}", f"service:${{ inputs.app-name }}", "platform:ecs"],
+              "name": '${{ github.repository }}-deploy-${{ github.run_number }}',
+              "reference_id": '${{ github.repository }}-deploy-${{ github.run_number }}-${{ github.sha }}',
+              "repo_name": '${{ github.repository }}',
+          }
+
+          r = requests.post(url, headers=headers, data=json.dumps(data))
+        shell: python
