@@ -101,7 +101,7 @@ jobs:
         with:
           task-definition: task-definition.json
           container-name: ${{ inputs.app-name }}-api
-          image: "${{ steps.login-ecr.outputs.registry }}/${{ inputs.app-name }}-api:sha-${{ steps.sha.outputs.sha }}"
+          image: "655438670330.dkr.ecr.us-east-1.amazonaws.com/${{ inputs.app-name }}-api:sha-${{ steps.sha.outputs.sha }}"
           environment-variables: |
             ASPNETCORE_ENVIRONMENT=${{ inputs.environment }}
             GIT__BUILD_NUMBER=${{ github.build_number }}
@@ -144,6 +144,20 @@ jobs:
           codedeploy-application: ${{ inputs.environment }}-${{ inputs.app-name }}-api
           codedeploy-deployment-group: ${{ inputs.environment }}-${{ inputs.app-name }}-api
           wait-for-service-stability: ${{ inputs.wait-for-service-stability }}
+
+      - name: (If Job Cancelled) Check For and Rollback Active Deployment
+        if: cancelled()
+        run: |
+          $appAndDeploymentGroupId = "${{ inputs.environment }}-${{ inputs.app-name }}-api"
+          $deploymentInfo = aws deploy list-deployments --application-name $appAndDeploymentGroupId --deployment-group-name $appAndDeploymentGroupId --include-only-statuses "InProgress" | ConvertFrom-Json
+          if ($deploymentInfo.deployments -and $deploymentInfo.deployments.Count -gt 0) {
+            $activeDeploymentId = $deploymentInfo.deployments[0]
+            aws deploy stop-deployment --deployment-id $activeDeploymentId --auto-rollback-enabled
+            Write-Output "Deployment $activeDeploymentId has been stopped and rolled back."
+          } else {
+            Write-Output "No active deployments found, therefore no rollback to perform."
+          }
+        shell: pwsh
 
       - name: Set up Python
         if: ${{ always() && github.ref_name == 'main' && inputs.environment == 'production' }}

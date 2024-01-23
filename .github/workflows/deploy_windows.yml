@@ -154,7 +154,7 @@ jobs:
           codedeploy-deployment-group: ${{ inputs.environment }}-${{ inputs.app-name }}
           wait-for-service-stability: ${{ inputs.wait-for-service-stability }}
 
-      - name: Check For and Cancel Active Deployment
+      - name: (If Job Cancelled) Check For and Rollback Active Deployment
         if: cancelled()
         run: |
           # PowerShell script to check for active deployment and cancel it

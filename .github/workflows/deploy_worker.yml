@@ -81,7 +81,7 @@ jobs:
         with:
           task-definition: task-definition.json
           container-name: ${{ inputs.container-name }}
-          image: "${{ steps.login-ecr.outputs.registry }}/${{ inputs.image }}:sha-${{ steps.sha.outputs.sha }}${{ inputs.image-tag-suffix }}"
+          image: "655438670330.dkr.ecr.us-east-1.amazonaws.com/${{ inputs.image }}:sha-${{ steps.sha.outputs.sha }}${{ inputs.image-tag-suffix }}"
           environment-variables: |
             GIT__BUILD_NUMBER=${{ github.build_number }}
             GIT__REF=${{ github.ref }}
