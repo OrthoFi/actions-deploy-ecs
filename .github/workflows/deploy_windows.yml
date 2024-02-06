@@ -158,8 +158,8 @@ jobs:
         if: cancelled()
         run: |
           # PowerShell script to check for active deployment and cancel it
-          $deploymentGroupId = "${{ inputs.environment }}-${{ inputs.app-name }}"
-          $deploymentInfo = aws deploy list-deployments --deployment-group-name $deploymentGroupId --include-only-statuses "InProgress" | ConvertFrom-Json
+          $appAndDeploymentGroupId = "${{ inputs.environment }}-${{ inputs.app-name }}"
+          $deploymentInfo = aws deploy list-deployments --application-name $appAndDeploymentGroupId --deployment-group-name $appAndDeploymentGroupId --include-only-statuses "InProgress" | ConvertFrom-Json
           if ($deploymentInfo.deployments -and $deploymentInfo.deployments.Count -gt 0) {
             $activeDeploymentId = $deploymentInfo.deployments[0]
             aws deploy stop-deployment --deployment-id $activeDeploymentId --auto-rollback-enabled
