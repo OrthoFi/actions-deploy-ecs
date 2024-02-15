@@ -121,26 +121,52 @@ jobs:
         shell: pwsh
         run: |
           $filePath = "${{ steps.task-def.outputs.task-definition }}"
-
           $taskDefinition = ConvertFrom-Json($(Get-Content -Path $filePath) -join '') -AsHashtable
-
           $labels = $taskDefinition.containerDefinitions[0].dockerLabels
-
           if (-not $labels) {
               $labels = @{}
           }
-
           $labels["com.datadoghq.tags.version"] = "sha-${{ steps.sha.outputs.sha }}"
-
           ConvertTo-Json $taskDefinition -Depth 100 | Out-File $filePath
 
       - name: Update AWS CodeDeploy Deployment Strategy
-        if: ${{ inputs.environment == 'production' && inputs.code-deploy-deployment-strategy }}
+        shell: pwsh
         run: |
-          aws deploy update-deployment-group \
-            --application-name ${{ inputs.environment }}-${{ inputs.app-name }} \
-            --current-deployment-group-name ${{ inputs.environment }}-${{ inputs.app-name }} \
-            --deployment-config-name ${{ github.event.inputs.code-deploy-deployment-strategy }}
+          switch ("${{ github.event.inputs.code-deploy-deployment-strategy }}") {
+            "Immediately" {
+              Write-Host "Desired deployment is immediate, using CodeDeployDefault.ECSAllAtOnce"
+              $deploymentStrategy = "CodeDeployDefault.ECSAllAtOnce"
+            }
+            "95% For 30 Minutes" {
+              Write-Host "Desired deployment is canary 95% of traffic for 30 minutes, using ECS95Percent30Minutes"
+              $deploymentStrategy = "ECS95Percent30Minutes"
+            }
+            "10% For 20 Minutes" {
+              Write-Host "Desired deployment is canary 10% of traffic for 20 minutes, using ECS10Percent20Minutes"
+              $deploymentStrategy = "ECS10Percent20Minutes"
+            }
+            "10% For 1 Hour" {
+              Write-Host "Desired deployment is canary 10% of traffic for 1 hour, using ECS10Percent60Minutes"
+              $deploymentStrategy = "ECS10Percent60Minutes"
+            }
+            "10% For 3 Hours" {
+              Write-Host "Desired deployment is canary 10% of traffic for 3 hours, using ECS10Percent180Minutes"
+              $deploymentStrategy = "ECS10Percent180Minutes"
+            }
+            "10% For 8 Hours" {
+              Write-Host "Desired deployment is canary 10% of traffic for 8 hours, using ECS10Percent480Minutes"
+              $deploymentStrategy = "ECS10Percent480Minutes"
+            }
+            default {
+              Write-Host "Desired deployment strategy was not specified as a workflow input, defaulting to immediate deploy using CodeDeployDefault.ECSAllAtOnce"
+              Write-Host "This is expected in non-production environments where deployments are auto-triggered"
+              $deploymentStrategy = "CodeDeployDefault.ECSAllAtOnce"
+            }
+          }
+          aws deploy update-deployment-group `
+            --application-name ${{ inputs.environment }}-${{ inputs.app-name }} `
+            --current-deployment-group-name ${{ inputs.environment }}-${{ inputs.app-name }} `
+            --deployment-config-name $deploymentStrategy 
 
       - name: Deploy Amazon ECS Task Definition
         id: deploy
