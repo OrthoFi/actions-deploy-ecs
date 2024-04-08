@@ -18,6 +18,12 @@ on:
         required: false
         type: string
 
+      code-deploy-retain-previous-version-duration-minutes:
+        default: 5
+        description: Duration in minutes to retain previous running version of tasks in ECS for easy rollback
+        required: false
+        type: number
+
       environment:
         description: Name of the environment to deploy to e.g. risk, dev, production
         required: true
@@ -129,44 +135,48 @@ jobs:
           $labels["com.datadoghq.tags.version"] = "sha-${{ steps.sha.outputs.sha }}"
           ConvertTo-Json $taskDefinition -Depth 100 | Out-File $filePath
 
-      - name: Update AWS CodeDeploy Deployment Strategy
+      - name: Update AWS CodeDeploy Deployment Strategy & Previous Version Retention Time
         shell: pwsh
         run: |
           switch ("${{ github.event.inputs.code-deploy-deployment-strategy }}") {
             "Immediately" {
-              Write-Host "Desired deployment is immediate, using CodeDeployDefault.ECSAllAtOnce"
+              Write-Host -BackgroundColor DarkGreen "Desired deployment is immediate (standard blue/green), using CodeDeployDefault.ECSAllAtOnce"
               $deploymentStrategy = "CodeDeployDefault.ECSAllAtOnce"
             }
-            "95% For 30 Minutes" {
-              Write-Host "Desired deployment is canary 95% of traffic for 30 minutes, using ECS95Percent30Minutes"
-              $deploymentStrategy = "ECS95Percent30Minutes"
-            }
             "10% For 20 Minutes" {
-              Write-Host "Desired deployment is canary 10% of traffic for 20 minutes, using ECS10Percent20Minutes"
+              Write-Host -BackgroundColor DarkGreen "Desired deployment is canary 10% of traffic for 20 minutes, using ECS10Percent20Minutes"
               $deploymentStrategy = "ECS10Percent20Minutes"
             }
             "10% For 1 Hour" {
-              Write-Host "Desired deployment is canary 10% of traffic for 1 hour, using ECS10Percent60Minutes"
+              Write-Host -BackgroundColor DarkGreen "Desired deployment is canary 10% of traffic for 1 hour, using ECS10Percent60Minutes"
               $deploymentStrategy = "ECS10Percent60Minutes"
             }
             "10% For 3 Hours" {
-              Write-Host "Desired deployment is canary 10% of traffic for 3 hours, using ECS10Percent180Minutes"
+              Write-Host -BackgroundColor DarkGreen "Desired deployment is canary 10% of traffic for 3 hours, using ECS10Percent180Minutes"
               $deploymentStrategy = "ECS10Percent180Minutes"
             }
-            "10% For 8 Hours" {
-              Write-Host "Desired deployment is canary 10% of traffic for 8 hours, using ECS10Percent480Minutes"
-              $deploymentStrategy = "ECS10Percent480Minutes"
-            }
             default {
-              Write-Host "Desired deployment strategy was not specified as a workflow input, defaulting to immediate deploy using CodeDeployDefault.ECSAllAtOnce"
+              Write-Host -BackgroundColor DarkGreen "Desired deployment strategy was not specified as a workflow input, defaulting to immediate deploy using CodeDeployDefault.ECSAllAtOnce"
               Write-Host "This is expected in non-production environments where deployments are auto-triggered"
               $deploymentStrategy = "CodeDeployDefault.ECSAllAtOnce"
             }
           }
+          Write-Host -BackgroundColor DarkGreen "Desired previous version retention time is: ${{ github.event.inputs.code-deploy-retain-previous-version-duration-minutes }} minutes"
+          Write-Host -BackgroundColor DarkGreen "Cancel this job while its still running to rollback the deployment to the previous version"
           aws deploy update-deployment-group `
             --application-name ${{ inputs.environment }}-${{ inputs.app-name }} `
             --current-deployment-group-name ${{ inputs.environment }}-${{ inputs.app-name }} `
-            --deployment-config-name $deploymentStrategy 
+            --deployment-config-name $deploymentStrategy `
+            --blue-green-deployment-configuration '{
+              "terminateBlueInstancesOnDeploymentSuccess": {
+                "action": "TERMINATE",
+                "terminationWaitTimeInMinutes": ${{ github.event.inputs.code-deploy-retain-previous-version-duration-minutes }}
+              },
+              "deploymentReadyOption": {
+                "actionOnTimeout": "CONTINUE_DEPLOYMENT",
+                "waitTimeInMinutes": 0
+              }
+            }'
 
       - name: Deploy Amazon ECS Task Definition
         id: deploy
