@@ -19,7 +19,6 @@ on:
         type: string
 
       code-deploy-retain-previous-version-duration-minutes:
-        default: 5
         description: Duration in minutes to retain previous running version of tasks in ECS for easy rollback
         required: false
         type: number
@@ -140,43 +139,54 @@ jobs:
         run: |
           switch ("${{ github.event.inputs.code-deploy-deployment-strategy }}") {
             "Immediately" {
-              Write-Host -BackgroundColor DarkGreen "Desired deployment is immediate (standard blue/green), using CodeDeployDefault.ECSAllAtOnce"
+              Write-Host "Desired deployment is immediate (standard blue/green), using CodeDeployDefault.ECSAllAtOnce"
               $deploymentStrategy = "CodeDeployDefault.ECSAllAtOnce"
             }
             "10% For 20 Minutes" {
-              Write-Host -BackgroundColor DarkGreen "Desired deployment is canary 10% of traffic for 20 minutes, using ECS10Percent20Minutes"
+              Write-Host "Desired deployment is canary 10% of traffic for 20 minutes, using ECS10Percent20Minutes"
               $deploymentStrategy = "ECS10Percent20Minutes"
             }
             "10% For 1 Hour" {
-              Write-Host -BackgroundColor DarkGreen "Desired deployment is canary 10% of traffic for 1 hour, using ECS10Percent60Minutes"
+              Write-Host "Desired deployment is canary 10% of traffic for 1 hour, using ECS10Percent60Minutes"
               $deploymentStrategy = "ECS10Percent60Minutes"
             }
             "10% For 3 Hours" {
-              Write-Host -BackgroundColor DarkGreen "Desired deployment is canary 10% of traffic for 3 hours, using ECS10Percent180Minutes"
+              Write-Host "Desired deployment is canary 10% of traffic for 3 hours, using ECS10Percent180Minutes"
               $deploymentStrategy = "ECS10Percent180Minutes"
             }
             default {
-              Write-Host -BackgroundColor DarkGreen "Desired deployment strategy was not specified as a workflow input, defaulting to immediate deploy using CodeDeployDefault.ECSAllAtOnce"
+              Write-Host "Desired deployment strategy was not specified as a workflow input, defaulting to immediate deploy using CodeDeployDefault.ECSAllAtOnce"
               Write-Host "This is expected in non-production environments where deployments are auto-triggered"
               $deploymentStrategy = "CodeDeployDefault.ECSAllAtOnce"
             }
           }
-          Write-Host -BackgroundColor DarkGreen "Desired previous version retention time is: ${{ github.event.inputs.code-deploy-retain-previous-version-duration-minutes }} minutes"
-          Write-Host -BackgroundColor DarkGreen "Cancel this job while its still running to rollback the deployment to the previous version"
+          $retainPreviousVersionDurationMinutes = "${{ github.event.inputs.code-deploy-retain-previous-version-duration-minutes }}"
+          if ([string]::IsNullOrEmpty($retainPreviousVersionDurationMinutes)) {
+            if ("${{ inputs.environment }}" -eq "production") {
+                $retainPreviousVersionDurationMinutes = 5
+            } else {
+                $retainPreviousVersionDurationMinutes = 1
+            }
+          }
+          Write-Host "Previous version retention time is $retainPreviousVersionDurationMinutes minutes"
+          Write-Host "Cancel this job while its still running to rollback the deployment to the previous version"
+          
           aws deploy update-deployment-group `
-            --application-name ${{ inputs.environment }}-${{ inputs.app-name }} `
-            --current-deployment-group-name ${{ inputs.environment }}-${{ inputs.app-name }} `
-            --deployment-config-name $deploymentStrategy `
-            --blue-green-deployment-configuration '{
-              "terminateBlueInstancesOnDeploymentSuccess": {
-                "action": "TERMINATE",
-                "terminationWaitTimeInMinutes": ${{ github.event.inputs.code-deploy-retain-previous-version-duration-minutes }}
-              },
-              "deploymentReadyOption": {
-                "actionOnTimeout": "CONTINUE_DEPLOYMENT",
-                "waitTimeInMinutes": 0
-              }
-            }'
+          --application-name "${{ inputs.environment }}-${{ inputs.app-name }}" `
+          --current-deployment-group-name "${{ inputs.environment }}-${{ inputs.app-name }}" `
+          --deployment-config-name "$deploymentStrategy" `
+          --blue-green-deployment-configuration @"
+          {
+            "terminateBlueInstancesOnDeploymentSuccess": {
+              "action": "TERMINATE",
+              "terminationWaitTimeInMinutes": $retainPreviousVersionDurationMinutes
+            },
+            "deploymentReadyOption": {
+              "actionOnTimeout": "CONTINUE_DEPLOYMENT",
+              "waitTimeInMinutes": 0
+            }
+          }
+          "@
 
       - name: Deploy Amazon ECS Task Definition
         id: deploy
