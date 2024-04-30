@@ -34,18 +34,32 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Determine SHA
+      - name: Get latest successful build SHA
         id: sha
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $commit_message = $(git log -1 --pretty=%B) -join ' '
+          # Extract the repository owner and name from the environment variable
+          $repoInfo = $env:GITHUB_REPOSITORY -split "/"
+          $owner = $repoInfo[0]
+          $repo = $repoInfo[1]
 
-          if($commit_message.StartsWith("chore(release)")) {
-            echo "sha=$(git rev-parse HEAD^)" >> $env:GITHUB_OUTPUT
+          $branch = $env:GITHUB_REF -replace "refs/heads/", ""
+
+          # Set the API endpoint URL with the branch name
+          $apiUrl = "https://api.github.com/repos/$owner/$repo/actions/workflows/build.yml/runs?status=success&branch=$branch"
+
+          # Make the API request
+          $response = Invoke-RestMethod -Uri $apiUrl -Headers @{
+            "Authorization" = "Bearer $env:GITHUB_TOKEN"
           }
-          else {
-            echo "sha=${{ github.sha }}" >> $env:GITHUB_OUTPUT
-          }
+
+          # Extract the SHA from the most recent successful run
+          $latestSuccessSha = $response.workflow_runs[0].head_sha
+
+          # Set the SHA as an output variable
+          echo "sha=$latestSuccessSha" >> $env:GITHUB_OUTPUT
 
       - name: Add AfterAllowTestTraffic Lambda
         shell: pwsh
