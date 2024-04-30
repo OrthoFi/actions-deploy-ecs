@@ -76,6 +76,22 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
+      - name: Double Check Image Availability
+        shell: pwsh
+        run: |
+          $imageTag = "sha-${{ steps.sha.outputs.sha }}"
+          $repositoryName = "${{ inputs.app-name }}-api"
+          
+          try {
+            $result = aws ecr describe-images --repository-name $repositoryName --image-ids imageTag=$imageTag
+            if ($result) { Write-Host "Image $imageTag is available in ECR, proceeding with deployment" }
+          }
+          catch {
+            Write-Host "Image $imageTag is not available in ECR"
+            Write-Host "Trigger another build and deploy to resolve this"
+            exit 1
+          }
+
       - name: Download Task Definition
         shell: bash
         run: aws ecs describe-task-definition --task-definition ${{ inputs.environment }}-${{ inputs.app-name }}-api --query taskDefinition > task-definition.json
