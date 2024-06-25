@@ -245,6 +245,60 @@ jobs:
           }
         shell: pwsh
 
+      - name: Fetch Logs From Latest Deploy
+        id: fetch-logs
+        if: always()
+        run: |
+          $envAppPath = "/ecs/${{ inputs.environment }}/${{ inputs.app-name }}"
+          $latestLogStreams = aws logs describe-log-streams --log-group-name $envAppPath --order-by "LastEventTime" --descending --limit 10 | ConvertFrom-Json
+          $filteredLogStreams = $latestLogStreams.logStreams | Where-Object { $_.logStreamName -like "app-container*" }
+          if ($filteredLogStreams.Count -gt 0) {
+            $sortedLogStreams = $filteredLogStreams | Sort-Object -Property creationTime -Descending
+            $logStreamName = $sortedLogStreams[0].logStreamName
+            $logContents = aws logs get-log-events --log-group-name $envAppPath --log-stream-name $logStreamName --start-from-head | ConvertFrom-Json
+            $logEvents = $logContents.events | ForEach-Object { $_.message }
+            $logEvents | Out-File -FilePath "latest-ecs-task.log"
+            Write-Output ""
+            Write-Output "Below are the logs from the latest ECS task:"
+            Write-Output "=========================================================="
+            $logEvents | Write-Output
+            Write-Output "=========================================================="
+            Write-Output "END LOGS FROM LATEST ECS TASK"
+            Write-Output "=========================================================="
+            Write-Output ""
+            Write-Output "Log contents have also been saved to latest-ecs-task.log"
+            Write-Output "And are attached to this workflow run."
+            Write-Output ""
+            Write-Output "Not seeing any logs from the application?"
+            Write-Output "Binding redirects can also be a cause of failed deployments."
+            Write-Output "They are usually associated with a failed deploy but with no errors"
+            Write-Output "or other entries of note in the logs."
+            Write-Output ""
+            Write-Output "You can retry the deploy and watch the CodeDeploy deployment, wait for it"
+            Write-Output "to complete the 'Test Traffic Route Setup' step. As soon as that step completes"
+            Write-Output "you can hit your application at http://the-url-to-your-application.com:8080/health"
+            Write-Output "This is a good way to track down binding redirect issues."
+            Write-Output ""
+            Write-Output "log-found=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Output ""
+            Write-Output "No logs were found in the log stream for the latest deployment,"
+            Write-Output "this may imply that there was an issue starting the new ECS tasks up"
+            Write-Output "during deployment. You should investigate this by looking over the"
+            Write-Output "task itself in the ECS console to try to see if there are any errors there."
+            Write-Output "It could be something like a missing image, or broken ECS task definition"
+            Write-Output "configuration."
+            Write-Output ""
+          }
+        shell: pwsh
+
+      - name: Upload Log File
+        if: always() && steps.fetch-logs.outputs.log-found == 'true'
+        uses: actions/upload-artifact@v3
+        with:
+          name: latest-ecs-task-logs
+          path: latest-ecs-task.log
+
       - name: Set up Python
         if: ${{ always() && github.ref_name == 'main' && inputs.environment == 'production' }}
         uses: actions/setup-python@v2
