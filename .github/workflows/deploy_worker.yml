@@ -44,7 +44,7 @@ jobs:
     environment: ${{ format('{0}-{1}', inputs.environment-name, inputs.service-name) }}
     concurrency: ${{ format('{0}-{1}', inputs.environment-name, inputs.service-name) }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
@@ -76,7 +76,7 @@ jobs:
           echo "sha=$latestSuccessSha" >> $env:GITHUB_OUTPUT
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v1-node16
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.BUILD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.BUILD_AWS_SECRET_ACCESS_KEY }}
@@ -85,7 +85,7 @@ jobs:
 
       - name: Login to ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Double Check Image Availability
         shell: pwsh
@@ -158,7 +158,7 @@ jobs:
 
       - name: Set up Python
         if: ${{ always() && github.ref_name == 'main' && inputs.environment-name == 'production' }}
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: '3.x'
   

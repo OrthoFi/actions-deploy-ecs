@@ -40,7 +40,7 @@ jobs:
     runs-on: ['self-hosted','linux','x64']
     environment: ${{ github.event.inputs.environment }}-beanstalk
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
@@ -89,7 +89,7 @@ jobs:
           $content | ConvertTo-Json -Depth 100 | Set-Content "./${{ inputs.appspec-name }}"
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v1-node16
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.BUILD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.BUILD_AWS_SECRET_ACCESS_KEY }}
@@ -98,7 +98,7 @@ jobs:
 
       - name: Login to Amazon ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Double Check Image Availability
         shell: pwsh
@@ -294,14 +294,14 @@ jobs:
 
       - name: Upload Log File
         if: always() && steps.fetch-logs.outputs.log-found == 'true'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: latest-ecs-task-logs
           path: latest-ecs-task.log
 
       - name: Set up Python
         if: ${{ always() && github.ref_name == 'main' && inputs.environment == 'production' }}
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: '3.x'
   
