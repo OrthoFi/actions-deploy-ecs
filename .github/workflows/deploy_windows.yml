@@ -121,6 +121,7 @@ jobs:
           aws-access-key-id: ${{ secrets.BUILD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.BUILD_AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
+          role-duration-seconds: 28800 # 8 hours
           role-to-assume: ${{ vars.AWS_BUILD_ROLE }}
   
       - name: Login to Amazon ECR
