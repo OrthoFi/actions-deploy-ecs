@@ -311,6 +311,69 @@ jobs:
           name: latest-ecs-task-logs
           path: latest-ecs-task.log
 
+      - name: Fetch Logs from AfterAllowTestTraffic Lambda
+        if: always()
+        run: |
+          $deploymentId = "${{ steps.deploy.outputs.codedeploy-deployment-id }}"
+          if (-not $deploymentId) {
+            Write-Output "No CodeDeploy deployment ID found."
+            Write-Output "It's likely that the deploy failed to start, see the CodeDeploy console for more information."
+            exit 1
+          }
+
+          Write-Host "Looking for logs from AfterAllowTestTraffic Lambda for CodeDeploy Deployment ID $deploymentId"
+          Write-Host "This can take a couple minutes, please be patient."
+          $logGroupName = "/aws/lambda/${{ inputs.environment }}-common-codeDeployTestTraffic"
+          $filterPattern = "{ $.deploymentInfo.deploymentId = $deploymentId }"
+          $startTime = [int64]((Get-Date).AddHours(-2).ToUniversalTime() - (Get-Date "1970-01-01T00:00:00Z").ToUniversalTime()).TotalMilliseconds
+          $logStreamResult = $null
+          $endTime = (Get-Date).AddMinutes(2)
+          
+          while ((Get-Date) -lt $endTime) {
+            $logStreamResult = $(aws logs filter-log-events `
+            --log-group-name $logGroupName `
+            --filter-pattern $filterPattern `
+            --start-time $startTime `
+            --limit 1) | ConvertFrom-Json
+
+            if ($logStreamResult.events.Count -gt 0) {
+              break
+            }
+          Start-Sleep -Seconds 5
+          }
+
+          if ($logStreamResult.events.Count -eq 0) {
+          Write-Host "No Lambda logs found for CodeDeploy Deployment ID $deploymentId"
+          exit 1
+          }
+
+          $logStreamName = $logStreamResult.events[0].logStreamName
+          Write-Host "Log Stream Found: $logStreamName"
+
+          $logContents = aws logs get-log-events `
+            --log-group-name $logGroupName `
+            --log-stream-name $logStreamName `
+            --start-from-head | ConvertFrom-Json
+          $logEvents = $logContents.events | ForEach-Object { $_.message }
+          $logEvents | Out-File -FilePath "after-allow-test-traffic-lambda.log"
+
+          Write-Output ""
+          Write-Output "Below are the logs from the CodeDeploy AfterAllowTestTraffic Lambda:"
+          Write-Output "=========================================================="
+          $logEvents | Write-Output
+          Write-Output "=========================================================="
+          Write-Output "END LOGS FROM AFTERALLOWTESTTRAFFIC LAMBDA"
+          Write-Output "=========================================================="
+          Write-Output ""
+        shell: pwsh
+  
+      - name: Upload Lambda Log File
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: after-allow-test-traffic-lambda-logs
+          path: after-allow-test-traffic-lambda.log
+
       - name: Set up Python
         if: ${{ always() && github.ref_name == 'main' && inputs.environment == 'production' }}
         uses: actions/setup-python@v5
