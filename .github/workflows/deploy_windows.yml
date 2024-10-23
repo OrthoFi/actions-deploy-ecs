@@ -155,12 +155,9 @@ jobs:
           container-name: ${{ inputs.app-name }}
           image: "655438670330.dkr.ecr.us-east-1.amazonaws.com/${{ inputs.app-name }}:sha-${{ steps.sha.outputs.sha }}"
           environment-variables: |
-            ASPNETCORE_ENVIRONMENT=${{ inputs.environment }}
             GIT__BUILD_NUMBER=${{ github.build_number }}
             GIT__REF=${{ github.ref }}
             GIT__SHA=${{ steps.sha.outputs.sha }}
-            DD_ENV=${{ inputs.environment }}
-            DD_SERVICE=${{ inputs.app-name }}
             DD_VERSION=sha-${{ steps.sha.outputs.sha }}
             OTEL_RESOURCE_ATTRIBUTES=deployment.environment=${{ inputs.environment }},service.version=sha-${{ steps.sha.outputs.sha }}
 
@@ -232,7 +229,7 @@ jobs:
 
       - name: Deploy Amazon ECS Task Definition
         id: deploy
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.task-def.outputs.task-definition }}
           service: ${{ inputs.environment }}-${{ inputs.app-name }}
